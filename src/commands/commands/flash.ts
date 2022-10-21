@@ -15,45 +15,54 @@ const SerialPort = require('serialport');
 const Readline = require('@serialport/parser-readline');
 
 function check_wrover(path: string) {
-    return new Promise((resolve, reject) => {
-        const port = new SerialPort(path, { baudRate: 115200 });
-        const parser = new Readline();
+  return new Promise((resolve, reject) => {
+    const port = new SerialPort(path, { baudRate: 115200 });
+    const parser = new Readline();
 
-        port.on('error', reject);
-        parser.on('error', reject);
-        port.pipe(parser);
+    port.on('error', reject);
+    parser.on('error', reject);
+    port.pipe(parser);
 
-        let failTimer = setTimeout(() => {
-            port.close(() => {});
-            reject(new Error('ESP32 not responding, timeout'));
-        }, 10000);
+    let failTimer = setTimeout(() => {
+      port.close(() => {});
+      reject(new Error('ESP32 not responding, timeout'));
+    }, 10000);
 
-        parser.on('data', (line: string) => {
-            line = line.trim();
-            if(line == "NOT_WROVER") {
-                clearTimeout(failTimer);
-                port.close(() => {
-                    resolve(false);
-                });
-            } else if((line as any) | 0) {
-                let size = (line as any) | 0;
-                clearTimeout(failTimer);
-                port.close(() => {
-                    resolve(size);
-                });
-            }
+    parser.on('data', (line: string) => {
+      line = line.trim();
+      if (line == 'NOT_WROVER') {
+        clearTimeout(failTimer);
+        port.close(() => {
+          resolve(false);
         });
-
-        // Trigger reset
-        port.on('open', () => {
-            port.set({'rts': true, 'dtr': false}, () => {
-                port.set({'rts': false, 'dtr': false});
-            });
+      } else if ((line as any) | 0) {
+        let size = (line as any) | 0;
+        clearTimeout(failTimer);
+        port.close(() => {
+          resolve(size);
         });
+      }
     });
+
+    // Trigger reset
+    port.on('open', () => {
+      port.set({ rts: true, dtr: false }, () => {
+        port.set({ rts: false, dtr: false });
+      });
+    });
+  });
 }
 
-export default async function({ port, init, resetNetwork, pro, proKey, firmwareFile, firmwareConfig, params }: FlashOptions) {
+export default async function ({
+  port,
+  init,
+  resetNetwork,
+  pro,
+  proKey,
+  firmwareFile,
+  firmwareConfig,
+  params,
+}: FlashOptions) {
   let doneErasing = false;
   let length: number | undefined;
   let downloaded = 0;
@@ -66,7 +75,7 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
         {
           format: 'Getting signed data |{bar}| {percentage}%',
           stream: process.stdout,
-          barsize: 30
+          barsize: 30,
         },
         cliProgress.Presets.shades_classic
       );
@@ -97,98 +106,119 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
     check();
   }
 
-  async function get_signed_data(firmwareFile: any, firmwareConfig: any, mac: string, pro?: boolean, proKey?: string) {
+  async function get_signed_data(
+    firmwareFile: any,
+    firmwareConfig: any,
+    mac: string,
+    pro?: boolean,
+    proKey?: string
+  ) {
     let firmware: any;
-    if(firmwareFile && firmwareConfig)
-        throw new RunError('Only one of --firmware-file=.. and --firmware-config.. may be used.');
-    else if(firmwareFile)
-        firmware = await fs.readFile(firmwareFile);
-    else if(firmwareConfig)
-        firmware = await build({
-            type: 'build',
-            firmwareConfig
-        }, {
-            proKey,
-            mac
-        });
+    if (firmwareFile && firmwareConfig)
+      throw new RunError(
+        'Only one of --firmware-file=.. and --firmware-config.. may be used.'
+      );
+    else if (firmwareFile) firmware = await fs.readFile(firmwareFile);
+    else if (firmwareConfig)
+      firmware = await build(
+        {
+          type: 'build',
+          firmwareConfig,
+        },
+        {
+          proKey,
+          mac,
+        }
+      );
     else
-        firmware = await build({
-            type: 'build'
-        }, {
-            stock: true,
-            pro: pro ? pro : false,
-            proKey,
-            mac
-        });
-    if(pro === undefined)
-        pro = (firmware.readUInt8(8) & 8) ? true : false;
+      firmware = await build(
+        {
+          type: 'build',
+        },
+        {
+          stock: true,
+          pro: pro ? pro : false,
+          proKey,
+          mac,
+        }
+      );
+    if (pro === undefined) pro = firmware.readUInt8(8) & 8 ? true : false;
 
     return await new Promise((resolve, reject) => {
-        const options = {
-            hostname: 'neonious.com',
-            port: 8445,
-            path: '/api/SignFirmware?mac=' + mac + (pro ? '&pro=1' : '') + (proKey ? '&proKey=' + proKey : ''),
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/firmware'
-            }
-        };
-    
-        let done = false;
-        let timeout = setTimeout(() => {
-            if(!done) {
-                done = true;
-                try {
-                    req.abort();
-                } catch(e) {}
-    
-                finish();
-                reject(new RunError('timeout trying to reach neonious servers'));
-            }
-        }, 120000);
-    
-        let req = request(options, (res) => {
-            if(res.statusCode == 200)
-                setTotalLength(parseInt(res.headers['content-length']!));
-    
-            let dat = [] as any;
-            res.on('data', (d) => {
-                dat.push(d);
-                if(res.statusCode == 200)
-                    addLength(d.length);
-            });
-            res.on('error', (e) => {
-                if(!done) {
-                    done = true;
-                    finish();
-                    reject(e);
-                }
-            });
-            res.on('end', () => {
-                done = true;
-                clearTimeout(timeout);
+      const options = {
+        hostname: 'neonious.com',
+        port: 8445,
+        path:
+          '/api/SignFirmware?mac=' +
+          mac +
+          (pro ? '&pro=1' : '') +
+          (proKey ? '&proKey=' + proKey : ''),
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/firmware',
+        },
+      };
 
-                if(res.statusCode != 200 && dat.length)
-                    reject(new RunError('From server: ' + Buffer.concat(dat).toString()));
-                else if(res.statusCode != 200) {
-                    reject(new RunError('Cannot get firmware from server'));
-                }
-                else {
-                    let data = Buffer.concat(dat);
-                    let final = Buffer.concat([data.slice(0, 0xF000), firmware.slice(0x80, 0x1F0080 - 128), data.slice(0xF000), firmware.slice(0x1F0080)]);
-                    finish();
-                    resolve(final);
-                }
-            });
-        }).on('error', (e) => {
-            if(!done) {
-                done = true;
-                finish();
-                reject(e);
-            }
+      let done = false;
+      let timeout = setTimeout(() => {
+        if (!done) {
+          done = true;
+          try {
+            req.abort();
+          } catch (e) {}
+
+          finish();
+          reject(new RunError('timeout trying to reach neonious servers'));
+        }
+      }, 120000);
+
+      let req = request(options, (res) => {
+        if (res.statusCode == 200)
+          setTotalLength(parseInt(res.headers['content-length']!));
+
+        let dat = [] as any;
+        res.on('data', (d) => {
+          dat.push(d);
+          if (res.statusCode == 200) addLength(d.length);
         });
-        req.end(firmware.slice(0, 0x1F0080));
+        res.on('error', (e) => {
+          if (!done) {
+            done = true;
+            finish();
+            reject(e);
+          }
+        });
+        res.on('end', () => {
+          done = true;
+          clearTimeout(timeout);
+
+          if (res.statusCode != 200 && dat.length)
+            reject(
+              new RunError('From server: ' + Buffer.concat(dat).toString())
+            );
+          else if (res.statusCode != 200) {
+            reject(new RunError('Cannot get firmware from server'));
+          } else {
+            let data = Buffer.concat(dat);
+            let final = Buffer.concat([
+              data.slice(0, 0xf000),
+              firmware.slice(0x80, 0x1f0080 - 128),
+              data.slice(0xf000),
+              firmware.slice(0x1f0080),
+            ]);
+            finish();
+            resolve(final);
+          }
+        });
+      }).on('error', (e) => {
+        if (!done) {
+          done = true;
+          finish();
+          reject(e);
+        }
       });
+      req.end(firmware.slice(0, 0x1f0080));
+    });
   }
 
   function spawnAsync(
@@ -197,28 +227,27 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
     args: string[],
     opts: SpawnOptions
   ) {
-	// Faster output than if we redirect to our stdout
-	if(writestd) {
-		if(!opts)
-			opts = {};
-		opts.stdio = ['inherit', 'inherit', 'inherit'];
-	}
+    // Faster output than if we redirect to our stdout
+    if (writestd) {
+      if (!opts) opts = {};
+      opts.stdio = ['inherit', 'inherit', 'inherit'];
+    }
 
     const p = spawn(prog, args, opts);
     return new Promise<{ code: number; out: string }>((resolve, reject) => {
       p.on('error', reject);
       let out = '';
-      if(p.stdout)
-	      p.stdout.on('data', data => {
-	        if (!writestd) out += data;
-	        else process.stdout.write(data);	// old
-	      });
-      if(p.stderr)
-	      p.stderr.on('data', data => {
-	        if (!writestd) out += data;
-	        else process.stderr.write(data);	// old
-	      });
-      p.on('close', code => {
+      if (p.stdout)
+        p.stdout.on('data', (data) => {
+          if (!writestd) out += data;
+          else process.stdout.write(data); // old
+        });
+      if (p.stderr)
+        p.stderr.on('data', (data) => {
+          if (!writestd) out += data;
+          else process.stderr.write(data); // old
+        });
+      p.on('close', (code) => {
         resolve({ code, out });
       });
     });
@@ -266,7 +295,7 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
       progs,
       [...argsAfterCmd, 'esptool.py', ...params, ...cmds],
       {
-        cwd: path.join(__dirname, 'esptool')
+        cwd: path.join(__dirname, 'esptool'),
       }
     );
 
@@ -283,7 +312,9 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
 
       if (pos == -1 || posEnd == -1 || id.length != 12) {
         console.log(out);
-        throw new RunError('Cannot read MAC address of ESP32 chip. Please check connection!');
+        throw new RunError(
+          'Cannot read MAC address of ESP32 chip. Please check connection!'
+        );
       }
       return id;
     } else {
@@ -300,13 +331,17 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
 
   let portAny: any;
   portAny = port;
-  if(!portAny) {
-      portAny = await configFile.getKey('flashPort');
-      if(!portAny)
-        throw new RunError('No port specified. Please use --port=.. to specify the port.')
+  if (!portAny) {
+    portAny = await configFile.getKey('flashPort');
+    if (!portAny)
+      throw new RunError(
+        'No port specified. Please use --port=.. to specify the port.'
+      );
   }
   params.push('-p');
   params.push(portAny.toString());
+  params.push('-b');
+  params.push('921600');
 
   // Sane check
   if ((await call('version', true)) === false) {
@@ -330,99 +365,153 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
   let lowjsFlags;
 
   try {
-
     let systemSize;
     let sig: any;
 
-    if(init) {
-        // Double check if device is an ESP32-WROVER as people just don't understand that this is important...
-        console.log('    now checking if it is an ESP32-WROVER... (takes a while)');
-        let wrover_check_path = path.join(__dirname, 'wrover_check_mc');
+    if (init) {
+      // Double check if device is an ESP32-WROVER as people just don't understand that this is important...
+      console.log(
+        '    now checking if it is an ESP32-WROVER... (takes a while)'
+      );
+      let wrover_check_path = path.join(__dirname, 'wrover_check_mc');
 
-        await call('erase_flash', false, false, true);
-        await call([
-            'write_flash',
-            '0xe000',
-            wrover_check_path + '/ota_data_initial.bin',
-            '0x1000',
-            wrover_check_path + '/bootloader.bin',
-            '0x8000',
-            wrover_check_path + '/partitions.bin',
-            '0x10000',
-            wrover_check_path + '/wrover_check_mc.bin',
-        ], false, false, true);
+      await call('erase_flash', false, false, true);
+      await call(
+        [
+          'write_flash',
+          '0xe000',
+          wrover_check_path + '/ota_data_initial.bin',
+          '0x1000',
+          wrover_check_path + '/bootloader.bin',
+          '0x8000',
+          wrover_check_path + '/partitions.bin',
+          '0x10000',
+          wrover_check_path + '/wrover_check_mc.bin',
+        ],
+        false,
+        false,
+        true
+      );
 
-        systemSize = await check_wrover(portAny.toString());
-        if(!systemSize)
-            throw new RunError('ESP32 is not an ESP32-WROVER or at least does not have required 4 MB PSRAM!\nPlease check: https://www.lowjs.org/supported-hardware.html');
-        if(systemSize >= 9 * 1024 * 1024)
-            proSupported = true;
-     } else {
-            let lwjs_signature_file = path.join(dir, 'sig');
-            await call(['read_flash', '0x7000', '9', lwjs_signature_file], false, false, true);
-            sig = await fs.readFile(lwjs_signature_file);
+      systemSize = await check_wrover(portAny.toString());
+      if (!systemSize)
+        throw new RunError(
+          'ESP32 is not an ESP32-WROVER or at least does not have required 4 MB PSRAM!\nPlease check: https://www.lowjs.org/supported-hardware.html'
+        );
+      if (systemSize >= 9 * 1024 * 1024) proSupported = true;
+    } else {
+      let lwjs_signature_file = path.join(dir, 'sig');
+      await call(
+        ['read_flash', '0x7000', '9', lwjs_signature_file],
+        false,
+        false,
+        true
+      );
+      sig = await fs.readFile(lwjs_signature_file);
 
-            systemSize = sig.readUInt32LE(4);
-            if(sig.slice(0, 4).toString() != 'lwjs')
-                throw new RunError('Current firmware on microcontroller is not based on low.js, please flash with --init option');
-        }
+      systemSize = sig.readUInt32LE(4);
+      if (sig.slice(0, 4).toString() != 'lwjs')
+        throw new RunError(
+          'Current firmware on microcontroller is not based on low.js, please flash with --init option'
+        );
+    }
 
-
-    if(!pro && !firmwareFile && !firmwareConfig) {
-        // open browser window here, no not wait and ignore any unhandled promise catch handlers
-        const opn = require('opn');
-        await opn('https://www.neonious.com/ThankYou', { wait: false }).catch(noop);
+    if (!pro && !firmwareFile && !firmwareConfig) {
+      // open browser window here, no not wait and ignore any unhandled promise catch handlers
+      const opn = require('opn');
+      await opn('https://www.neonious.com/ThankYou', { wait: false }).catch(
+        noop
+      );
     }
 
     // Get signed data based on MAC address and do flash erase in parallel, if requested
     if (init) {
-        console.log(
-        '*** Step 2/3: Erasing flash and ' + (firmwareFile ? 'signing' : 'building') + ' image in parallel'
+      console.log(
+        '*** Step 2/3: Erasing flash and ' +
+          (firmwareFile ? 'signing' : 'building') +
+          ' image in parallel'
+      );
+      function reflect(promise: any) {
+        return promise.then(
+          function (v: any) {
+            return { v: v, status: 'fulfilled' };
+          },
+          function (e: any) {
+            return { e: e, status: 'rejected' };
+          }
         );
-        function reflect(promise: any){
-            return promise.then(function(v: any){ return {v:v, status: "fulfilled" }},
-                                function(e: any){ return {e:e, status: "rejected" }});
-        }
-        let erase = erase_flash();
-        try {
-            data = (await Promise.all([get_signed_data(firmwareFile, firmwareConfig, mac, pro, proKey), erase]))[0] as any;
-        } catch(e) {
-            await reflect(erase);
-            throw e;
-        }
+      }
+      let erase = erase_flash();
+      try {
+        data = (
+          await Promise.all([
+            get_signed_data(firmwareFile, firmwareConfig, mac, pro, proKey),
+            erase,
+          ])
+        )[0] as any;
+      } catch (e) {
+        await reflect(erase);
+        throw e;
+      }
     } else {
-        console.log('*** Step 2/3: ' + (firmwareFile ? 'Signing' : 'Building') + ' image');
-        setDoneErasing();
-        data = await get_signed_data(firmwareFile, firmwareConfig, mac, pro, proKey) as any;
+      console.log(
+        '*** Step 2/3: ' + (firmwareFile ? 'Signing' : 'Building') + ' image'
+      );
+      setDoneErasing();
+      data = (await get_signed_data(
+        firmwareFile,
+        firmwareConfig,
+        mac,
+        pro,
+        proKey
+      )) as any;
     }
 
     // pro && (!custom || ota support)
     let newSize = data.readUInt32LE(0x6004);
     lowjsFlags = data.readUInt8(0x6008);
 
-    let dataAt4xx = (lowjsFlags & 8) && (!(lowjsFlags & 4) || (lowjsFlags & 16));
-    if(!newSize) {
-        newSize = systemSize;
-        let dataMaxLen = (systemSize as number) - (dataAt4xx ? 0x400000 : 0x200000);
-        if(dataAt4xx && (lowjsFlags & (4 | 16)) == (4 | 16))
-            dataMaxLen = dataMaxLen / 2;
-        if(data.length - 0x1FF000 > dataMaxLen)
-            throw new RunError('Total used flash space is higher than the space available on the device (' + systemSize + ' bytes)');
-    
-        data.writeUInt32LE(newSize, 0x6004);
+    let dataAt4xx = lowjsFlags & 8 && (!(lowjsFlags & 4) || lowjsFlags & 16);
+    if (!newSize) {
+      newSize = systemSize;
+      let dataMaxLen =
+        (systemSize as number) - (dataAt4xx ? 0x400000 : 0x200000);
+      if (dataAt4xx && (lowjsFlags & (4 | 16)) == (4 | 16))
+        dataMaxLen = dataMaxLen / 2;
+      if (data.length - 0x1ff000 > dataMaxLen)
+        throw new RunError(
+          'Total used flash space is higher than the space available on the device (' +
+            systemSize +
+            ' bytes)'
+        );
+
+      data.writeUInt32LE(newSize, 0x6004);
     }
 
-    if(pro !== undefined && ((pro && !(lowjsFlags & 8)) || (!pro && (lowjsFlags & 8))))
-        throw new RunError('--pro flag is not identical with setting of firmware file / firmware config')
-    if(init) {
-        if(newSize > systemSize)
-            throw new RunError('Total used flash space is higher than the space available on the device (' + systemSize + ' bytes)');
+    if (
+      pro !== undefined &&
+      ((pro && !(lowjsFlags & 8)) || (!pro && lowjsFlags & 8))
+    )
+      throw new RunError(
+        '--pro flag is not identical with setting of firmware file / firmware config'
+      );
+    if (init) {
+      if (newSize > systemSize)
+        throw new RunError(
+          'Total used flash space is higher than the space available on the device (' +
+            systemSize +
+            ' bytes)'
+        );
     } else {
-        if((newSize && newSize != systemSize)
-        || (lowjsFlags & (8 | 4 | 16)) != (sig!.readUInt8(8) & (8 | 4 | 16)))
-            throw new RunError('Current firmware on microcontroller is not compatible to the one being flashed, check firmware config for differences, or erase all data with the additional parameter --init');
+      if (
+        (newSize && newSize != systemSize) ||
+        (lowjsFlags & (8 | 4 | 16)) != (sig!.readUInt8(8) & (8 | 4 | 16))
+      )
+        throw new RunError(
+          'Current firmware on microcontroller is not compatible to the one being flashed, check firmware config for differences, or erase all data with the additional parameter --init'
+        );
     }
-    data.writeUInt8(resetNetwork ? 1 : 0, 0x1FF000 - 21);
+    data.writeUInt8(resetNetwork ? 1 : 0, 0x1ff000 - 21);
 
     console.log('*** Step 3/3: Flashing firmware');
 
@@ -430,49 +519,52 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
     let params = ['write_flash'];
     let partNo = 1;
     async function push_parts(at: number, data: any) {
-        let file = path.join(dir, 'part' + partNo++);
-        await fs.writeFile(file, data);
-        params.push('' + at);
-        params.push(file);
+      let file = path.join(dir, 'part' + partNo++);
+      await fs.writeFile(file, data);
+      params.push('' + at);
+      params.push(file);
     }
-    if(init) {
-        if(dataAt4xx) {
-            await push_parts(0x1000, data.slice(0, 0x1FF000));
-            await push_parts(0x400000, data.slice(0x1FF000));
-            await call(params);
-        } else {
-            await push_parts(0x1000, data);
-            await call(params);
-        }
+    if (init) {
+      if (dataAt4xx) {
+        await push_parts(0x1000, data.slice(0, 0x1ff000));
+        await push_parts(0x400000, data.slice(0x1ff000));
+        await call(params);
+      } else {
+        await push_parts(0x1000, data);
+        await call(params);
+      }
     } else {
-        // skip everything below NVS
-        if(dataAt4xx) {
-            await push_parts(0xE000, data.slice(0xD000, 0x1FF000));
-            await push_parts(0x400000, data.slice(0x1FF000));
-            await call(params);
-        } else {
-            await push_parts(0xE000, data.slice(0xD000));
-            await call(params);
-        }
+      // skip everything below NVS
+      if (dataAt4xx) {
+        await push_parts(0xe000, data.slice(0xd000, 0x1ff000));
+        await push_parts(0x400000, data.slice(0x1ff000));
+        await call(params);
+      } else {
+        await push_parts(0xe000, data.slice(0xd000));
+        await call(params);
+      }
     }
-  } catch(e) {
+  } catch (e) {
     try {
-        await fs.remove(dir);
+      await fs.remove(dir);
     } catch (e) {}
     throw e;
   }
   try {
     await fs.remove(dir);
-} catch (e) {}
+  } catch (e) {}
 
   if (init)
-    console.log('*** Done, low.js flashed. Please give your device a few seconds to reset to factory state');
+    console.log(
+      '*** Done, low.js flashed. Please give your device a few seconds to reset to factory state'
+    );
   else if (resetNetwork)
-    console.log('*** Done, low.js flashed and network settings resetted to factory state');
-  else
-    console.log('*** Done, low.js updated');
+    console.log(
+      '*** Done, low.js flashed and network settings resetted to factory state'
+    );
+  else console.log('*** Done, low.js updated');
 
-    if ((init || resetNetwork) && !(lowjsFlags & 32)) {
+  if ((init || resetNetwork) && !(lowjsFlags & 32)) {
     let passHash = data.slice(0x6000 + 16, 0x6000 + 16 + 12);
     let pass = '';
     for (let i = 0; i < 12; i++) {
@@ -490,6 +582,10 @@ export default async function({ port, init, resetNetwork, pro, proKey, firmwareF
     console.log('Password:   ' + (pass as any));
     console.log('In this Wifi, the microcontroller has the IP 192.168.0.1');
   }
-  if(!pro && !firmwareFile && !firmwareConfig && proSupported)
-    console.log(chalk.bgYellow('Note: Your device has enough flash space to support low.js Professional with on-board web-based IDE + debugger, over-the-air updating and native modules. Please check https://www.neonious.com/Store for more information!'));
+  if (!pro && !firmwareFile && !firmwareConfig && proSupported)
+    console.log(
+      chalk.bgYellow(
+        'Note: Your device has enough flash space to support low.js Professional with on-board web-based IDE + debugger, over-the-air updating and native modules. Please check https://www.neonious.com/Store for more information!'
+      )
+    );
 }
