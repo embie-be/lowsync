@@ -13,7 +13,7 @@ import FsStructure, {
   FsStatStructure,
   getSubStructure,
   setInStructure,
-  toStructure
+  toStructure,
 } from './sync/fsStructure';
 import getInitialActions from './sync/getInitialActions';
 import { isAskUserAction, isFinalAction } from './sync/initialAction';
@@ -24,16 +24,16 @@ import {
   getFileSynchronizer,
   SyncFile,
   SyncFileAdd,
-  SyncFileFakeRemove
+  SyncFileFakeRemove,
 } from './sync/synchronize/syncFile';
 
-export default async function(options: SyncOptions) {
-  if(!options.toMc && !options.toPc)
-    throw new RunError("Either --to-mc or --to-pc must be true");
+export default async function (options: SyncOptions) {
+  if (!options.toMc && !options.toPc)
+    throw new RunError('Either --to-mc or --to-pc must be true');
   const config = {
     syncDir: (await configFile.getKey('syncDir'))!,
     exclude: await configFile.getKey('exclude'),
-    transpile: await configFile.getKey('transpile')
+    transpile: await configFile.getKey('transpile'),
   };
 
   function exclude() {
@@ -42,7 +42,7 @@ export default async function(options: SyncOptions) {
       '**/.*',
       '**/lowsync.auth.config.json',
       '**/lowsync.sync.config.json',
-      '**/lowsync.config.json'
+      '**/lowsync.config.json',
     ];
   }
 
@@ -74,9 +74,7 @@ export default async function(options: SyncOptions) {
       const stat = await fs.stat(config.syncDir);
       if (!stat.isDirectory()) {
         throw new RunError(
-          `Cannot syncronize with directory '${
-            config.syncDir
-          }' because a file exists in the same location.`
+          `Cannot syncronize with directory '${config.syncDir}' because a file exists in the same location.`
         );
       }
     }
@@ -85,9 +83,9 @@ export default async function(options: SyncOptions) {
   function doTranspile() {
     let transpile = false;
     if (typeof options.transpile !== 'undefined') {
-        transpile = options.transpile;
+      transpile = options.transpile;
     } else if (typeof config.transpile !== 'undefined') {
-        transpile = config.transpile;
+      transpile = config.transpile;
     }
     return transpile;
   }
@@ -98,70 +96,25 @@ export default async function(options: SyncOptions) {
 
   const localFiles = await getLocalFiles({
     rootDir: config.syncDir,
-    excludeGlobs: exclude()
+    excludeGlobs: exclude(),
   });
   const localFileStruct = toStructure(localFiles);
 
   const { stats: remoteFiles, hadPut } = await getRemoteFiles({
-    excludeGlobs: exclude()
+    excludeGlobs: exclude(),
   });
 
   let syncFileExists = await fs.pathExists(syncFilePath());
   if (!hadPut && syncFileExists) {
-    type T = 'abort' | 'initial_sync';
-        const action = await promptList<T>({
-        message:
-          'The filesystem of the microcontroller has not been synced before, however the repository on your PC has been synced with another device. How would you like to continue?',
-        default: 'abort',
-        choices: [
-          {
-            name: 'Abort synchronization.',
-            value: 'abort'
-          },
-          {
-            name:
-              'Discard sync history and do an initial sync. This will ask you how to proceed where files exist both locally and remotely and differ. NO existing files or folders will be automatically overridden.',
-            value: 'initial_sync'
-          }
-        ]
-      });
+    await fs.unlink(syncFilePath());
+    syncFileExists = false;
+  }
+  if (!hadPut) await httpApi.SetLowSyncHadPut();
 
-      if (action === 'abort')
-        return;
-      await fs.unlink(syncFilePath());
-      syncFileExists = false;
-    }
-    if(!hadPut)
-        await httpApi.SetLowSyncHadPut();
-
-    let doInitialCopy = false;
-    if(!syncFileExists && localFiles.length && remoteFiles.length) {
-        type T = 'abort' | 'initial_copy' | 'initial_sync';
-        const action = await promptList<T>({
-        message:
-          'The microcontroller has files in his file system (probably preinstalled example application), the repository on your PC also. How would you like to continue?',
-        default: 'initial_copy',
-        choices: [
-            {
-              name: 'Delete files on microcontroller and copy local files to microcontroller.',
-            value: 'initial_copy'
-          },
-          {
-            name: 'Sync both ways. This will ask you how to proceed where files exist both locally and remotely and differ. NO existing files or folders will be automatically overridden.',
-            value: 'initial_sync'
-            },
-            {
-              name: 'Abort synchronization.',
-              value: 'abort'
-            }
-        ]
-      });
-
-      if (action === 'abort')
-        return;
-      if(action == 'initial_copy')
-          doInitialCopy = true;
-    }
+  let doInitialCopy = false;
+  if (!syncFileExists && localFiles.length && remoteFiles.length) {
+    doInitialCopy = true;
+  }
 
   const remoteFilesStruct = toStructure(remoteFiles);
 
@@ -170,21 +123,25 @@ export default async function(options: SyncOptions) {
   let actions = getInitialActions({
     local: localFileStruct,
     remote: remoteFilesStruct,
-    base: baseFilesStruct
+    base: baseFilesStruct,
   });
 
-  if(doInitialCopy) {
-      for(let i in actions)
-        if(actions[i].type != 'updateBase')
-          actions[i].type = 'syncToRemote';
+  if (doInitialCopy) {
+    for (let i in actions)
+      if (actions[i].type != 'updateBase') actions[i].type = 'syncToRemote';
   }
-  if(!options.toMc)
-    actions = actions.filter((action) => { return action.type != 'syncToRemote'; });
-  if(!options.toPc)
-    actions = actions.filter((action) => { return action.type != 'syncToLocal'; });
+  if (!options.toMc)
+    actions = actions.filter((action) => {
+      return action.type != 'syncToRemote';
+    });
+  if (!options.toPc)
+    actions = actions.filter((action) => {
+      return action.type != 'syncToLocal';
+    });
 
-  const userFinalActions = await askUser({
-    actions: actions.filter(isAskUserAction)
+  const userFinalActions = await askUser(
+    {
+      actions: actions.filter(isAskUserAction),
     },
     options.toMc,
     options.toPc
@@ -199,7 +156,7 @@ export default async function(options: SyncOptions) {
 
   if (
     !finalActions.filter(
-      a => a.type === 'syncToLocal' || a.type === 'syncToRemote'
+      (a) => a.type === 'syncToLocal' || a.type === 'syncToRemote'
     ).length
   ) {
     console.log('Nothing to syncronize.');
@@ -209,7 +166,7 @@ export default async function(options: SyncOptions) {
       remote: remoteFilesStruct,
       actions: finalActions,
       syncLog,
-      fakeSyncLog
+      fakeSyncLog,
     });
 
     const synchronizer = getFileSynchronizer(
@@ -225,7 +182,7 @@ export default async function(options: SyncOptions) {
   }
 
   for (const { destside, relPath, statType } of syncLog.filter(
-    s => s.type === 'add'
+    (s) => s.type === 'add'
   ) as SyncFileAdd[]) {
     const direction = destside === 'pc' ? 'MC => PC' : 'PC => MC';
     const fd = statType === 'dir' ? 'Folder' : 'File';
@@ -242,7 +199,7 @@ export default async function(options: SyncOptions) {
     answer: _mon,
     message:
       'Would you like to show the output of the microcontroller? (Use the --monitor command line option to remove this prompt and enable/disable showing of the output after sync.)',
-    defaultAnswer: true
+    defaultAnswer: true,
   });
 
   let restart = false;
@@ -250,19 +207,19 @@ export default async function(options: SyncOptions) {
     if (_rs === true || monitor) {
       restart = true;
     } else {
-        const status = await getProgramStatus();
-        if (status !== 'updating_sys') {
-          const msg =
-            status === 'stopped'
-              ? 'Start the program now?'
-              : 'Restart the currently running program for any changes to take effect?';
-          restart = await promptBool({
-            message:
-              'The filesystem of the microcontroller has changed. ' +
-              msg +
-              ' (Use the --restart command line option to remove this prompt and enable/disable restart after sync.)',
-            default: true
-          });
+      const status = await getProgramStatus();
+      if (status !== 'updating_sys') {
+        const msg =
+          status === 'stopped'
+            ? 'Start the program now?'
+            : 'Restart the currently running program for any changes to take effect?';
+        restart = await promptBool({
+          message:
+            'The filesystem of the microcontroller has changed. ' +
+            msg +
+            ' (Use the --restart command line option to remove this prompt and enable/disable restart after sync.)',
+          default: true,
+        });
       }
     }
   }
