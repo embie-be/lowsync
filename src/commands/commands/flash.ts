@@ -1,15 +1,14 @@
 import { spawn, SpawnOptions } from 'child_process';
 import * as cliProgress from 'cli-progress';
 import * as fs from 'fs-extra';
-import { request } from 'https';
 import { configFile } from '../../config/mainConfigFile';
-import { noop } from 'lodash';
 import * as os from 'os';
 import * as path from 'path';
 import { FlashOptions } from '../../args';
 import { RunError } from '../../runError';
 import chalk from 'chalk';
 import build from './build';
+import sign from './utils/sign';
 
 const SerialPort = require('serialport');
 const Readline = require('@serialport/parser-readline');
@@ -96,16 +95,6 @@ export default async function ({
     check();
   }
 
-  function addLength(len: number) {
-    downloaded += len;
-    bar && bar.update(downloaded);
-  }
-
-  function finish() {
-    finished = true;
-    check();
-  }
-
   async function get_signed_data(
     firmwareFile: any,
     firmwareConfig: any,
@@ -144,80 +133,17 @@ export default async function ({
       );
     if (pro === undefined) pro = firmware.readUInt8(8) & 8 ? true : false;
 
-    return await new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'neonious.com',
-        port: 8445,
-        path:
-          '/api/SignFirmware?mac=' +
-          mac +
-          (pro ? '&pro=1' : '') +
-          (proKey ? '&proKey=' + proKey : ''),
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/firmware',
-        },
-      };
-
-      let done = false;
-      let timeout = setTimeout(() => {
-        if (!done) {
-          done = true;
-          try {
-            req.abort();
-          } catch (e) {}
-
-          finish();
-          reject(new RunError('timeout trying to reach neonious servers'));
-        }
-      }, 120000);
-
-      let req = request(options, (res) => {
-        if (res.statusCode == 200)
-          setTotalLength(parseInt(res.headers['content-length']!));
-
-        let dat = [] as any;
-        res.on('data', (d) => {
-          dat.push(d);
-          if (res.statusCode == 200) addLength(d.length);
-        });
-        res.on('error', (e) => {
-          if (!done) {
-            done = true;
-            finish();
-            reject(e);
-          }
-        });
-        res.on('end', () => {
-          done = true;
-          clearTimeout(timeout);
-
-          if (res.statusCode != 200 && dat.length)
-            reject(
-              new RunError('From server: ' + Buffer.concat(dat).toString())
-            );
-          else if (res.statusCode != 200) {
-            reject(new RunError('Cannot get firmware from server'));
-          } else {
-            let data = Buffer.concat(dat);
-            let final = Buffer.concat([
-              data.slice(0, 0xf000),
-              firmware.slice(0x80, 0x1f0080 - 128),
-              data.slice(0xf000),
-              firmware.slice(0x1f0080),
-            ]);
-            finish();
-            resolve(final);
-          }
-        });
-      }).on('error', (e) => {
-        if (!done) {
-          done = true;
-          finish();
-          reject(e);
-        }
-      });
-      req.end(firmware.slice(0, 0x1f0080));
+    return await new Promise(async (resolve, reject) => {
+      const signed = await sign(firmware.slice(0, 0x1f0080));
+      setTotalLength(signed.length);
+      return resolve(
+        Buffer.concat([
+          signed.slice(0, 0xf000),
+          firmware.slice(0x80, 0x1f0080 - 128),
+          signed.slice(0xf000),
+          firmware.slice(0x1f0080),
+        ])
+      );
     });
   }
 
@@ -414,14 +340,6 @@ export default async function ({
         throw new RunError(
           'Current firmware on microcontroller is not based on low.js, please flash with --init option'
         );
-    }
-
-    if (!pro && !firmwareFile && !firmwareConfig) {
-      // open browser window here, no not wait and ignore any unhandled promise catch handlers
-      const opn = require('opn');
-      await opn('https://www.neonious.com/ThankYou', { wait: false }).catch(
-        noop
-      );
     }
 
     // Get signed data based on MAC address and do flash erase in parallel, if requested

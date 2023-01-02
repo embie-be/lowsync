@@ -2,5 +2,6 @@
   "javascript.preferences.importModuleSpecifier": "relative",
   "typescript.preferences.importModuleSpecifier": "relative",
   "editor.lineNumbers": "on",
-  "typescript.tsdk": "node_modules/typescript/lib/"
+  "typescript.tsdk": "node_modules/typescript/lib/",
+  "i18next.i18nPaths": "/Users/thibaut/Documents/Embie/Projets/Icoms-Detection/LOW/lowsync/common/src/translations"
 }

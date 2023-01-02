@@ -3,7 +3,7 @@ import { httpApi } from '../../../common/src/http/httpApiService';
 import { SyncOptions } from '../../args';
 import { configFile } from '../../config/mainConfigFile';
 import { getProgramStatus, restartProgram } from '../../http';
-import { confirmOrDefault, promptList, promptBool } from '../../prompts';
+import { confirmOrDefault, promptBool } from '../../prompts';
 import { RunError } from '../../runError';
 import { getExistingOrNewConfigPath } from '../../util';
 import askUser from './sync/askUser';
